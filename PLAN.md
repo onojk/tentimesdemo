@@ -8,54 +8,53 @@ lumens-per-watt findings. Every number on screen is a figure from
 
 ## 0. What the audio analysis found
 
-Run with ref's `analyze.py`, unchanged; stage 3 adapts it.
-
 - **Length** 232.000 s (48 kHz stereo). The music stops hard at **3:50.87**, on the last
-  tracked beat (beat 404), dropping from −26 to −83 dBFS within a second, followed by 1.1 s
-  of silence.
-- **Tempo 105.9 bpm** (the style line's 92 doesn't apply). The beat tracker gives 405 beats,
-  median gap 0.567 s ± 0.016, steady in every 30 s window. Autocorrelation at 92 bpm is
-  negative in every window. One bar is 2.267 s. All sync uses the measured beat grid.
-- **Bass dropouts** with strong novelty peaks at 1:23.67, 2:32.53, 3:04.43 and 3:31.83. The
-  first two last **exactly 8 beats (2 bars)** each, which fits the two-line a cappella
-  pre-chorus.
-- **Repeats (beat-synchronous chroma):** the passage at **1:00.37–1:23.67** recurs at
-  **2:08.63–2:32.53** (similarity 0.72) and at **3:13.57–3:31.83** (0.60–0.67). The first
-  two each lead straight into a pre-chorus, so they are verse 2 and verse 4 (10.3 and
-  10.5 bars).
+  tracked beat (beat 404): −26 to −83 dBFS within a second, then 1.1 s of silence.
+- **Tempo 105.9 bpm** (the style line's 92 doesn't apply). 405 beats, median gap 0.567 s,
+  steady in every 30 s window. One bar is 2.267 s. All sync uses the measured beat grid.
+- **Ticks** sit on the half-beat (eighth-note) grid: 17 in the intro and 26 in the outro.
+  The last is at 3:49.70, after the last spoken word.
+- **Sections** are confirmed against a transcript (faster-whisper medium.en with word
+  timestamps, run from a scratchpad venv that isn't committed). Suno kept the lyric order.
+  The feature-only reading in the first draft was wrong: the 8-beat bass dropouts at 1:23.67
+  and 2:32.53 are the **ends of the choruses** (instrumental tails), not the pre-choruses.
 
-## 1. Section map (provisional; feature-based, no transcription)
+## 1. Section map (confirmed by transcript)
 
-Times are snapped to the beat grid. "Confidence" says how well the features support each
-row.
+Each section starts on its first sung word (or vocal fill), snapped to the nearest beat.
 
-| # | section | start | end | bars | scene | confidence, evidence |
+| # | section | start | end | bars | scene | first words |
 |---|---|---|---|---|---|---|
-| 1 | intro (ticks) | 0:00.00 | 0:08.63 | 3.8 | ray | high: −30 dBFS, no bass |
-| 2 | verse 1 | 0:08.63 | 1:00.37 | 22.8 | assemble | **low**: see *Unplaced* |
-| 3 | verse 2 | 1:00.37 | 1:23.67 | 10.3 | flap | medium: same music as verse 4, leads into pre-chorus 1 |
-| 4 | pre-chorus 1 | 1:23.67 | 1:28.23 | 2.0 | quartet (white) | high: 8-beat bass dropout, novelty 0.82 |
-| 5 | chorus 1 | 1:28.23 | 1:47.00 | 8.3 | arms, 72-bit | medium: end at novelty 0.40 |
-| 6 | verse 3 | 1:47.00 | 2:08.63 | 9.5 | rho | medium |
-| 7 | verse 4 | 2:08.63 | 2:32.53 | 10.5 | ecm | medium-high: repeat of verse 2 (0.72) |
-| 8 | pre-chorus 2 | 2:32.53 | 2:37.10 | 2.0 | quartet (tower palette) | high: 8-beat dropout, novelty 0.81 / 0.91 |
-| 9 | chorus 2 | 2:37.10 | 3:04.43 | 12.1 | arms, 84-bit | high on start; 4 bars longer than chorus 1 |
-| 10 | bridge | 3:04.43 | 3:13.57 | 4.0 | split screen | start high (dropout, sparse: 4 onsets in 4 s); **end low** |
-| 11 | final chorus | 3:13.57 | 3:41.00 | 12.1 | finale, 72/84/96 stacked | **low**: see *Unplaced* |
-| 12 | outro (spoken, ticks) | 3:41.00 | 3:50.87 (+1.13 s silence) | 4.4 | outro | medium: high band collapses 0.25 → 0.13 |
+| 1 | intro (ticks) | 0:00.00 | 0:07.50 | 3.3 | ray | — |
+| 2 | verse 1 | 0:07.50 | 0:36.47 | 12.8 | assemble | "I built a tower" |
+| 3 | verse 2 | 0:36.47 | 0:56.37 | 8.8 | flap | "ah" fill, then "I swore the line" |
+| 4 | pre-chorus 1 | 0:56.37 | 1:01.50 | 2.3 | quartet (white) | "No warmer, no colder" |
+| 5 | chorus 1 | 1:01.50 | 1:28.23 | 11.8 | arms, 72-bit | "Ten times"; ends in a 4 s instrumental tail |
+| 6 | verse 3 | 1:28.23 | 1:46.43 | 8.0 | rho | "The rho lamp" |
+| 7 | verse 4 | 1:46.43 | 2:04.67 | 8.0 | ecm | "The curves came in" |
+| 8 | pre-chorus 2 | 2:04.67 | 2:09.77 | 2.2 | quartet (tower palette) | "No warmer, no colder" |
+| 9 | chorus 2 | 2:09.77 | 2:36.53 | 11.8 | arms, 84-bit | "Ten times"; 4 s tail |
+| 10 | bridge | 2:36.53 | 3:05.03 | 12.6 | split screen | "One number's line" |
+| 11 | final chorus | 3:05.03 | 3:37.50 | 14.3 | finale, 72/84/96 | "da da" fill, then "Ten times" (3:09.00), tag "the tower's lit" ×3 |
+| 12 | outro | 3:37.50 | 3:52.00 (music to 3:50.87) | 6.4 | outro | "Twelve percent on the plain arm" |
 
-**Unplaced: please confirm by ear.**
+**Word cues** (transcript word starts, not snapped), in `sections.py` `CUES`:
 
-- **0:08.63–1:00.37.** Is verse 1 all of this? Or is 0:08.63–0:36.47 more intro, with
-  verse 1 at 0:36.47 (10.5 bars, the same length as the other verses)? There is also a
-  1.5-bar step at 0:56.93.
-- **3:04.43 → 3:13.57 → 3:31.83.** A bridge of 8 lines in 4 bars is short. 3:13.57–3:31.83
-  is the same music as verses 2 and 4, so the bridge may be sung over it, with the final
-  chorus starting at the 3:31.83 dropout. That would leave the final chorus only 4 bars
-  plus the outro.
-- **Outro start:** 3:41.00 or 3:45.67.
-- **Word cues** (the "yes" flash, "forty-three", 3.4 → 1.4, the outro's last word): I'll
-  propose times from onset and rms features in stage 3 for you to confirm.
+| cue | time | word |
+|---|---|---|
+| three_point_four | 0:44.92 | "three-point-four" |
+| one_point_four | 0:50.02 | "one-point-four" |
+| static1 on / off | 0:56.38 / 0:58.56 | "No warmer, no colder" |
+| yes1 | 1:01.12 | "yes" |
+| forty_three1 | 1:09.48 | "forty-three" |
+| meeting | 1:43.64 | "meeting place" ("twice as far" 1:42.26) |
+| eight_thousand | 1:50.98 | "eight thousand" |
+| static2 on / off | 2:04.48 / 2:06.78 | "No warmer, no colder" |
+| yes2 | 2:09.42 | "yes" |
+| forty_three2 / 3 | 2:17.68 / 3:17.00 | "forty-three" |
+| tower_lit | 3:30.12 | "and the tower's lit" |
+| outro_line1 / 2 | 3:37.38 / 3:40.78 | the two spoken lines |
+| last_word | 3:43.58 | "run" (ends 3:44.46): the typed text completes; the clock ticks on to the last tick, 3:49.70 |
 
 ## 2. What is reused from ref/laser-beam-demo
 
@@ -64,7 +63,7 @@ row.
 | ref | here | kept | changed |
 |---|---|---|---|
 | `analyze.py` | `analyze.py` | ffmpeg decode at 22050 Hz mono; 735-sample hop, so exactly 30 frames per second; STFT; rms; spectral-flux onsets; autocorrelation tempo; Ellis DP beats; low/mid/high; beat-chroma novelty | drop tape wobble; add quartet bands, tick detection and the repeat matrix (§4) |
-| `sections.py` | `sections.py` | `RAW` map with a `why` per boundary, beat-snapped, printed as a table | the 12 rows above, plus `CUES` |
+| `sections.py` | `sections.py` | `RAW` map with a `why` per boundary, beat-snapped, printed as a table | the 12 rows above (from the transcript), plus `CUES` and the ticks |
 | `sync.py` | `sync.py` | `at/since/beat/section/uniforms`; flashes under 3 per second; integrated speeds | white flash only where asked; per-scene uniforms |
 | `render.py` | `render.py` | moderngl/EGL headless; `t = frame / 30`; hash-seeded grain (byte-identical reruns); HEAD prelude; quarter-res two-pass bloom; ffmpeg rgb24 → libx264 + `-ss/-t` audio mux, `apad`, 40 ms tail fade, bt709, faststart; `--start/--dur/--full/--still/--scene/--crf`; `text_image()` | §3 |
 | `fx/*.glsl` | `fx/*.glsl` | one fragment shader per scene on the shared HEAD | new scenes (§7) |
@@ -137,9 +136,15 @@ Per n ∈ {72, 84, 96}, 1,500 samples:
    - the rho cost at 96;
    - a split-half label A/B (seeded), for the bridge's "half of the numbers chose the road".
 5. **Summary** (printed and in the JSON): the fraction lit per lamp per n at 10× and 100×.
-   I'll print these next to the NOTES coverage tables as a sanity check. They will not
-   match exactly, because NOTES used the primehelix prior and this uses 1/θ + 1, so I won't
-   tune anything toward them.
+   The density 1/θ + 1 on [8/n, 1/2] **is the primehelix prior** that NOTES used (p ≥ 2^8,
+   1,500 per size), so the coverage should agree closely with NOTES, and it does.
+   - At 72 bits, against NOTES' "Light, best paired" (td 2^12, B1 2^9, stage 2 to 20·B1):
+     td 0.246 vs 0.232, p−1 s1 0.190 vs 0.177, dark 0.399 vs 0.375.
+   - The remaining gap is the stage-2 bound: this tower uses 10·B1, NOTES 20·B1. Recomputed
+     at 20·B1 from the stored q/B1, the tower gives s2 0.199 vs 0.216 and dark 0.365 vs
+     0.375. Every lamp is then within about 0.02, which is sampling noise for 1,500 numbers
+     (s.e. ≈ 0.011 per fraction).
+   - Nothing is tuned toward NOTES.
 6. **Rho check:** the same detector on 16-bit primes, reporting the mean f-evaluations at
    detection against the mean μ + λ. NOTES has 552 against 279.4 for the card. I'll report
    my figures as they come out. One real run's trace (μ, λ, power-of-two checkpoints,
@@ -192,10 +197,9 @@ grey. The spine (radius → 0) is always grey: it's the wall.
    - **Sources:** both percentages are from NOTES, "Real-prime split-half search", appended
      to the stage-1 pipeline, plain, 72 bits. Both counts are from `data/tower.json`
      (`pm1_s2` under `lamp_100` vs `lamp`, 72 bits).
-   - **Chorus 2 (84-bit tower):** the 84-bit figures from the same NOTES row are +35.6% /
-     −4.6%, with 386 / 225 points. *Unless you say otherwise*, chorus 2 shows those, so the
-     bars match the tower on screen. It is 4 bars longer, so the sweep runs longer, not
-     faster.
+   - **Chorus 2 (84-bit tower):** the 84-bit figures from the same NOTES row, labelled
+     "84-bit": +35.6% / −4.6%, with 386 / 225 stage-2 points (user, Oct 26). Both choruses
+     are 11.8 bars, with a 4 s instrumental tail after "that's how the dark gets lit".
 7. **Verse 3, rho.** The stored Brent run's footsteps around its ρ cycle. The stride doubles
    at each power of two, and the walk runs past the meeting point toward 2× ("552 / 279").
    Flash on detection.
@@ -207,9 +211,15 @@ grey. The spine (radius → 0) is always grey: it's the wall.
      half B checking it through.
    - The centre stays grey.
 10. **Final chorus.** All three sizes stacked (72 / 84 / 96), fully lit from the JSON,
-    orbiting slowly. Bloom follows the choir swell (smoothed rms + high band).
-11. **Outro.** "Twelve percent on the plain arm." / "Sealed before the run." typed on the
-    spoken words over a ticking clock, which stops on the last word.
+    orbiting slowly. Bloom follows the choir swell (smoothed rms + high band). On
+    "forty-three" (3:17.00), the 72-bit band briefly shows its two cost bars again
+    (+42.8% red, −6.4% under the line) for about one bar. Then they fade and the orbit
+    continues. No new numbers.
+11. **Outro.** "Twelve percent on the plain arm." / "Sealed before the run." are typed on
+    the spoken words, and the text completes on "run" (3:43.58–3:44.46). The clock keeps
+    ticking with the audio: one tick per detected tick, so picture and sound never disagree.
+    It stops on the last audible tick (3:49.70), and the picture holds through the cut at
+    3:50.87.
 
 ## 8. Stages and commits
 
