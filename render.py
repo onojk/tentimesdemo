@@ -57,6 +57,10 @@ ECM_PRICE = 8187                 # verse 4: ruint per ECM curve at B1 = 257 (NOT
 ECM_TEXT = "ruint per ECM curve at B1 = 257"
 ECM_COUNT_FROM = 0.27            # verse 4: the ticker starts this long after the section start
 ECM_FLOOD = 1.2                  # verse 4: s for the floodlight to wash in
+BRIDGE_L = ((-0.89, 0.0), 0.72)  # bridge: left panel's centre and rim radius (P units)
+BRIDGE_SHIFT, BRIDGE_DIST, BRIDGE_EL = 0.50, 5.1, 24.0   # bridge: right panel's tower camera
+BRIDGE_A_END = 13.2              # bridge: s after "a thousand rays" by which half A has filled
+BRIDGE_B_DUR = 1.8               # bridge: s for half B to fill after "the other half"
 
 VERT = """
 #version 330
@@ -439,6 +443,9 @@ class Film:
         print(f"ray: {RAY_SIZE}-bit point p = {p}, theta {theta:.4f}, angle {angle:.4f} rad",
               file=sys.stderr)
         self.consts = {"ray_angle": angle, "r_rim": R_RIM, "r_spine": R_SPINE}
+        self.ray_theta = theta
+        P72 = next(x for x in tower["sizes"] if x["n"] == RAY_SIZE)["points"]
+        self.ray_index = [x["n"] for x in tower["sizes"]].index(RAY_SIZE) * tower["per_size"] + P72["lamp"].index(RAY_LAMP)
         self.rah, self.attr = tower_arrays(tower)
         self.r.load_points(self.rah, self.attr)
         self.aspect = W / H
@@ -661,6 +668,49 @@ class Film:
         az = 0.9 + 0.35 * np.sin(0.07 * (u["travel"] - self.sync.at(self.sync.travel, s["start"])))
         return orbit(az, ARM_EL + 6, self.aspect, dist=ARM_DIST, target=(0.0, u["band_y"], 0.0),
                      shift=ARM_SHIFT, inverse=True)
+
+    def key_bridge(self, s):
+        """Bridge: the time (s from the section start) each point lights; -1 never (dark
+        points: the hard ones, left to qs, stay grey). Half A lights rim first from "a
+        thousand rays"; half B from "the other half", fast. The ray's own number lights when
+        the spark lands."""
+        c = self.sync.cues
+        key = np.full(len(self.rah), -1.0, "f4")
+        lit = self.attr[:, 0] < 3.5
+        for half, (t0, t1) in enumerate(((c["thousand_rays"] + 0.3, c["thousand_rays"] + BRIDGE_A_END),
+                                         (c["half_b"], c["half_b"] + BRIDGE_B_DUR))):
+            idx = np.nonzero(lit & (self.attr[:, 3] == half))[0]
+            idx = idx[np.argsort(-self.rah[idx, 0], kind="stable")]
+            key[idx] = np.linspace(t0, t1, len(idx)) - s["start"]
+        key[self.ray_index] = c["thousand_rays"] - s["start"]
+        return key
+
+    def camera_bridge(self, s, u):
+        az = 0.6 + 0.10 * (u["travel"] - self.sync.at(self.sync.travel, s["start"]))
+        return orbit(az, BRIDGE_EL, self.aspect, dist=BRIDGE_DIST, target=(0.0, -0.04, 0.0), shift=BRIDGE_SHIFT)
+
+    def uniforms_bridge(self, s, u):
+        """Left: the ray of the intro's number lights from the rim inward from "the rim lights
+        first", reaching its factor's radius (theta of p) on "spark"; the spark then arcs to
+        that number's point on the tower at right and lands on "a thousand rays"."""
+        c, t = self.sync.cues, u["t"]
+        n = RAY_SIZE
+        f = (self.ray_theta - 8 / n) / (0.5 - 8 / n)            # fraction of the way in
+        x = np.clip((t - c["rim_first"]) / (c["spark"] - c["rim_first"]), 0, 1)
+        fly = float(np.clip((t - c["spark"] - 0.15) / (c["thousand_rays"] - c["spark"] - 0.15), 0, 1))
+        # where the spark lands: the number's point, projected by this frame's camera
+        vp = np.frombuffer(self.camera_bridge(s, u), "f4").reshape(4, 4).T
+        r, a, h = self.rah[self.ray_index]
+        w = np.array([2 * r * np.cos(a), (h - 84) / 12 * BAND, -2 * r * np.sin(a), 1.0])
+        cl = vp @ w
+        to = (float(cl[0] / cl[3] * self.aspect), float(cl[1] / cl[3]))
+        (cx, cy), R = BRIDGE_L
+        span = R - R_SPINE * 1.6
+        dirv = np.array([np.cos(u["ray_angle"]), np.sin(u["ray_angle"])])
+        frm = tuple(float(v) for v in np.array([cx, cy]) + dirv * (R - span * f))
+        return {"lit_front": float(f * x), "spark_f": float(f), "since_spark": float(t - c["spark"]),
+                "fly": fly, "spark_from": frm, "spark_to": to, "left_c": (cx, cy), "left_r": R,
+                "since_a": float(t - c["half_a"]), "since_b": float(t - c["half_b"])}
 
     def frame(self, fi):
         t = fi / FPS
