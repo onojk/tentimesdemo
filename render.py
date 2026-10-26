@@ -46,6 +46,12 @@ ARM_SHORT = (1.7, 1.7 + 2.27)    # short-arm sweep and bar (one bar long), same 
 ARM_GREY = 4.8                   # the long arm's extra points grey out ("light the wedge")
 ARM_EL, ARM_DIST, ARM_SHIFT = 40.0, 3.1, -0.16   # chorus camera: elevation, distance, NDC shift
 LABEL_W, LABEL_H, LABEL_SIZE = 400, 72, 46
+# verse 3: the card's rho, from NOTES (outside checks, second round): mean 552.0 f
+# evaluations at detection against mean mu + lambda 279.4 on 16-bit primes
+RHO_TEXT = ["552 / 279", "f evaluations at detection / \u03bc + \u03bb, mean on 16-bit primes"] + \
+           [f"r = {2 ** k}" for k in range(8)]
+RHO_TEXT_W, RHO_TEXT_H = 1400, 96
+RHO_CAPTION = 0.6                # s after the flash that "552 / 279" fades in
 
 VERT = """
 #version 330
@@ -415,7 +421,11 @@ class Film:
             for txt in (f"{plong:+.1f}%", f"{pshort:+.1f}%".replace("-", "\u2212"), f"{cl}", f"{cs}",
                         "100\u00d7 B1", "10\u00d7 B1", f"{n}-bit", "qs"):
                 cells.append(text_image([txt], LABEL_SIZE, LABEL_W, LABEL_H))
-        self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption, "labels": np.vstack(cells)})
+        rho_cells = [text_image([x], 64 if i == 0 else 40, RHO_TEXT_W, RHO_TEXT_H) for i, x in enumerate(RHO_TEXT)]
+        self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption, "labels": np.vstack(cells),
+                                 "rho_text": np.vstack(rho_cells)})
+        tr = tower["rho_check"]["trace"]
+        self.rho_trace = (tr["mu"], tr["lambda"], tr["detect_f"])
         p, theta, angle = ray_point(tower)
         print(f"ray: {RAY_SIZE}-bit point p = {p}, theta {theta:.4f}, angle {angle:.4f} rad",
               file=sys.stderr)
@@ -589,6 +599,30 @@ class Film:
         az = az0 + 0.35 * np.sin(0.07 * (u["travel"] - self.sync.at(self.sync.travel, s["start"])))
         return orbit(az, ARM_EL, self.aspect, dist=ARM_DIST, target=(0.0, u["band_y"], 0.0),
                      shift=ARM_SHIFT, inverse=True)
+
+    def uniforms_rho(self, s, u):
+        """Verse 3: the stored Brent run (data/tower.json rho_check.trace) as footsteps on its
+        rho: a tail of mu steps into a loop of lambda. Brent's detector works in blocks of
+        r = 1, 2, 4, ...: the saved point (the tortoise) jumps to the walker at step 2r - 2;
+        the next r steps are not compared, the r after are, with a gcd every 64. Each block
+        gets an equal slice of time, so the pace doubles block by block; the last block ends
+        on the gcd that detects (step 510 for this run), timed to "meeting" (1:43.64). The
+        loop first closes at step mu + lambda (279): the meeting point the walk overshoots."""
+        mu, lam, det = self.rho_trace
+        t0, t1 = s["start"], self.sync.cues["meeting"]
+        kd = int(np.log2((det + 2) // 4))                     # the detecting block: r = 2^kd ends at 4r - 2
+        d = (t1 - t0) / (kd + 1)
+        k = int(np.clip((u["t"] - t0) // d, 0, kd))
+        r = 2 ** k
+        x = np.clip((u["t"] - t0 - k * d) / d, 0, 1)
+        cur = (2 * r - 2) + 2 * r * x if u["t"] < t1 else float(det)
+        tf = u["t"] - t1
+        return {"mu": float(mu), "lam": float(lam), "cur": float(cur), "blk_r": float(r),
+                "tort": float(2 * r - 2), "det": float(det),
+                "flash": float(np.exp(-tf / 0.15)) if tf >= 0 else 0.0,
+                "after": float(max(tf, 0.0)) if tf >= 0 else -1.0,
+                "cap_a": float(np.clip((tf - RHO_CAPTION) / 0.5, 0, 1)) if tf >= 0 else 0.0,
+                "r_cell": float(2 + k)}
 
     def frame(self, fi):
         t = fi / FPS
