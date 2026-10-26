@@ -49,6 +49,7 @@ CUES = [
     ("forty_three1",     69.48,  "chorus 1 'forty-three' (69.48-70.78)"),
     ("meeting",          103.64, "verse 3 'meeting place' ('twice as far' 102.26)"),
     ("eight_thousand",   110.98, "verse 4 'eight thousand' (110.98-111.88)"),
+    ("not_tonight",      119.92, "verse 4 'But not tonight' (the floodlight; 'the wall is cheap today' 122.70)"),
     ("static2_on",       124.48, "pre-chorus 2 'No warmer, no colder' starts"),
     ("static2_off",      126.78, "'colder' ends"),
     ("yes2",             129.42, "pre-chorus 2 'yes'"),

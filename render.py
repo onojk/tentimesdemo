@@ -52,6 +52,11 @@ RHO_TEXT = ["552 / 279", "f evaluations at detection / \u03bc + \u03bb, mean on 
            [f"r = {2 ** k}" for k in range(8)]
 RHO_TEXT_W, RHO_TEXT_H = 1400, 96
 RHO_CAPTION = 0.6                # s after the flash that "552 / 279" fades in
+ECM = os.path.join(HERE, "data", "ecm.json")
+ECM_PRICE = 8187                 # verse 4: ruint per ECM curve at B1 = 257 (NOTES, I-017)
+ECM_TEXT = "ruint per ECM curve at B1 = 257"
+ECM_COUNT_FROM = 0.27            # verse 4: the ticker starts this long after the section start
+ECM_FLOOD = 1.2                  # verse 4: s for the floodlight to wash in
 
 VERT = """
 #version 330
@@ -421,9 +426,13 @@ class Film:
             for txt in (f"{plong:+.1f}%", f"{pshort:+.1f}%".replace("-", "\u2212"), f"{cl}", f"{cs}",
                         "100\u00d7 B1", "10\u00d7 B1", f"{n}-bit", "qs"):
                 cells.append(text_image([txt], LABEL_SIZE, LABEL_W, LABEL_H))
+        ecm_cells = [text_image([ECM_TEXT], 40, RHO_TEXT_W, RHO_TEXT_H)]
         rho_cells = [text_image([x], 64 if i == 0 else 40, RHO_TEXT_W, RHO_TEXT_H) for i, x in enumerate(RHO_TEXT)]
         self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption, "labels": np.vstack(cells),
-                                 "rho_text": np.vstack(rho_cells)})
+                                 "rho_text": np.vstack(rho_cells), "ecm_text": ecm_cells[0]})
+        ecm = json.load(open(ECM))
+        off = [x["n"] for x in tower["sizes"]].index(ecm["size"]) * tower["per_size"]
+        self.ecm_hits = [np.array(c["hits"], int) + off for c in ecm["curves"]]
         tr = tower["rho_check"]["trace"]
         self.rho_trace = (tr["mu"], tr["lambda"], tr["detect_f"])
         p, theta, angle = ray_point(tower)
@@ -624,6 +633,35 @@ class Film:
                 "cap_a": float(np.clip((tf - RHO_CAPTION) / 0.5, 0, 1)) if tf >= 0 else 0.0,
                 "r_cell": float(2 + k)}
 
+    def uniforms_ecm(self, s, u):
+        """Verse 4: the price ticker counts up (ease-out) to 8,187 on "eight thousand"; the
+        floodlight washes in on "but not tonight" (the line after "re-roll on the way")."""
+        t, c = u["t"], self.sync.cues
+        t0, t1 = s["start"] + ECM_COUNT_FROM, c["eight_thousand"]
+        x = float(np.clip((t - t0) / (t1 - t0), 0, 1))
+        v = int(round(ECM_PRICE * (1 - (1 - x) ** 2)))          # ease-out: the last digits settle on the cue
+        digits = [10] * 4
+        for k, ch in enumerate(reversed(str(v))):
+            digits[k] = int(ch)
+        flood = float(np.clip((t - c["not_tonight"]) / ECM_FLOOD, 0, 1))
+        return {"band_n": 96.0, "band_y": (96 - 84) / 12 * BAND, "ticker": tuple(float(d) for d in digits),
+                "ticker_on": float(np.clip((t - t0) / 0.2, 0, 1)), "landed": float(x >= 1),
+                "since_land": float(t - t1), "flood": flood}
+
+    def keyframe_ecm(self, s, u):
+        """Each beat of verse 4 rolls the next curve of data/ecm.json: key = 1 for the dark
+        points it finds."""
+        b0 = int(np.searchsorted(self.sync.beat_t, s["start"] - 1e-6))
+        k = max(0, int(np.floor(u["beat"])) - b0) % len(self.ecm_hits)
+        key = np.zeros(len(self.rah), "f4")
+        key[self.ecm_hits[k]] = 1.0
+        return key
+
+    def camera_ecm(self, s, u):
+        az = 0.9 + 0.35 * np.sin(0.07 * (u["travel"] - self.sync.at(self.sync.travel, s["start"])))
+        return orbit(az, ARM_EL + 6, self.aspect, dist=ARM_DIST, target=(0.0, u["band_y"], 0.0),
+                     shift=ARM_SHIFT, inverse=True)
+
     def frame(self, fi):
         t = fi / FPS
         s = self.sync.section(t)
@@ -639,7 +677,9 @@ class Film:
                 u["view_proj"], u["inv_view_proj"] = m
             else:
                 u["view_proj"] = m
-        return self.r.frame(name, u, fi, key=self.key(dict(s, scene=name)))
+        kf = getattr(self, "keyframe_" + name, None)
+        key = kf(s, u) if kf else self.key(dict(s, scene=name))
+        return self.r.frame(name, u, fi, key=key)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -663,7 +703,8 @@ def main():
         f0, n = 0, film.sync.n_frames
     elif a.section:
         s = film.sync.by_name[a.section]
-        f0, n = round(s["start"] * FPS), round(s["end"] * FPS) - round(s["start"] * FPS)
+        # the section's own frames: the first with t >= start up to the first with t >= end
+        f0 = int(np.ceil(s["start"] * FPS - 1e-9)); n = int(np.ceil(s["end"] * FPS - 1e-9)) - f0
     else:
         f0, n = round(a.start * FPS), round(a.dur * FPS)
     stills = {round(t * FPS): t for t in a.still}
