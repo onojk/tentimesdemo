@@ -1,5 +1,66 @@
 # Ten Times, Not a Hundred — plan
 
+## Status for the morning (Oct 26)
+
+**The video is finished.** It is
+**`renders/ten_times_1080p.mp4`** (`/home/onojk123/tentimesdemo/renders/ten_times_1080p.mp4`,
+not committed: `renders/` is ignored).
+
+- **Format:** 1920×1080, 30 fps, H.264 (CRF 22), with AAC 320k audio.
+- **Length:** 232.000 s (**3:52.00**), 6,960 frames. The audio stream is 232.000 s too.
+- **Size:** 48,519,811 bytes (46.3 MiB).
+- **Render time:** 1 min 59 s on the Lunar Lake iGPU.
+- **Sync at the last tick (3:49.70):**
+  - the clock hand's last step is between frames 6890 and 6891, which is t = 229.700 s;
+  - the muxed audio cross-correlates with the source WAV at **0 samples' lag** around the
+    tick;
+  - nothing in the clock region moves after that step, apart from grain and compression
+    (max pixel difference 2–14).
+- **Stills:** one per section is inspected (`renders/ten_times_1080p_*.png`). All corners
+  are at 1/255, except inside pre-chorus 1's grey static, by design.
+- **Per-scene checks** (every scene): stills inspected; background black; flash cap; cue
+  timings against `sections.py`; framemd5 regression after each shared-code change. All
+  earlier sections were frame-identical every time.
+
+**Calls made while you were away:** see the section of that name at the end of this file
+(9 items). The two to look at first:
+- **#7:** "the tower's lit" is the tower's own brightest light. By whole-frame luminance it
+  can't beat the full-frame static and flashes.
+- **#1:** the verse-4 speckle is real ECM. The first version had an early-exit bug, found by
+  the exact-order check and fixed before anything was committed.
+
+**Skipped:**
+- nothing from the brief;
+- 4K, as asked.
+
+**Permission workarounds:**
+- `rm -rf` of a scratch directory was denied once, so each regression check used a fresh
+  scratch directory instead;
+- no installs were needed after the project `.venv`.
+
+**Also worth knowing:**
+- `render.py --section` was off by one frame at section starts (preview-only; full renders
+  were never affected). Fixed in `6c7df30`.
+- The NOTES line numbers in §6 are as of lumens-per-watt `460eece`.
+
+**Commits** (oldest first; nothing pushed):
+- `82b160d` Stage 1: plan, lyrics, gitignore
+- `eb36842` Stage 2: theta tower from real primes
+- `9d793ff` Stage 3: audio analysis, section map, sync
+- `c9851cb` Stage 4: renderer and intro scene (ray)
+- `2eacb02` Stage 4: verse 1, the tower assembles
+- `7f58bf2` Stage 4: verse 2, split-flap 3.4 -> 1.4 and the settling curve
+- `fc98bd0` Stage 4: pre-chorus, the quartet beams
+- `b634f55` Stage 4: choruses, light against bill
+- `707fd66` Stage 4: verse 3, the rho footsteps
+- `6c7df30` Stage 4: verse 4, ECM speckle, price ticker, floodlight
+- `c0a7dcf` Stage 4: bridge, one ray and the tower filling
+- `5be8c60` Stage 4: final chorus, the whole tower lit
+- `cc1d15a` PLAN: correct the bridge's lit / dark point counts
+- `fa03227` Stage 4: outro, typed lines and the clock
+- `50cd52d` README and LICENSE (MIT, Jonathan Kendall)
+- this status commit
+
 A demoscene music video for "Ten Times, Not a Hundred" (Suno; electronic synth-pop with a
 vocoder robot lead, barbershop harmonies and clock ticks). The song reports tonight's
 lumens-per-watt findings. Every number on screen is a figure from
