@@ -154,17 +154,17 @@ Duplicate p (common at small θ) stay in; they are part of the density.
 
 ## 6. Numbers on screen and where they come from
 
-All are from `~/lumens-per-watt/NOTES.md`, Oct 26, and are shown exactly as written there:
+All are from `~/lumens-per-watt/NOTES.md` (line numbers as of its commit 460eece, Oct 26), shown exactly as written there:
 
 | on screen | figure | NOTES |
 |---|---|---|
 | 3.4 → 1.4 (1.41) | p−1 behaves like a random integer of size p/c: model input 3.4, fitted c = 1.41 (stage 1) on 1,500 real primes per size, 16–44 bits | "Real-prime measurement run" (l. 4741–4743) |
-| +42.8% / −6.4% (cost; chorus 1) | stage 2 appended to the stage-1 pipeline, plain, 72 bits: 100·B1 costs 42.8% more, 10·B1 saves 6.4% (NOTES writes savings as +: "+6.4 … 100: −42.8") | "Real-prime split-half search" (l. 4848) |
+| +42.8% / −6.4% (cost; chorus 1) | stage 2 appended to the stage-1 pipeline, plain, 72 bits: 100·B1 costs 42.8% more, 10·B1 saves 6.4% (NOTES writes savings as +: "+6.4 … 100: −42.8") | "Real-prime split-half search" (l. 4853) |
 | +35.6% / −4.6% (chorus 2, 84-bit) | the same row at 84 bits | same |
 | 402 / 247 (72), 386 / 225 (84) | stage-2 points lit at 100× / 10× | `data/tower.json` |
 | 552 / 279 (1.98×) | the card's rho detects at 552.0 f-evaluations against mean μ + λ = 279.4 on 16-bit primes | Outside checks, second round (l. 1713–1716) |
 | 8,187 | ruint per ECM curve at B1 = 257 | I-017 information step (l. 4626) |
-| 12.1% | the honest saving from plain p−1 stage 2 at 72 bits, split-half | "Real-prime split-half search" (l. 4845) |
+| 12.1% | the honest saving from plain p−1 stage 2 at 72 bits, split-half | "Real-prime split-half search" (l. 4850) |
 
 ## 7. Scenes
 
