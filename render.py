@@ -35,6 +35,7 @@ FLAP_SPRING = (0.28, 1.3)        # verse 2: damping ratio and period (s) of c's 
 FLAP_SAMPLES = 96                # verse 2: curve samples
 FLAP_CAPTION = 3.2               # verse 2: s after "one-point-four" the caption fades in
 FLIP_DUR = 0.09                  # verse 2: one flap flip, s
+QUARTET_FLASH = 0.12             # pre-choruses: decay (s) of the one white flash on "yes"
 
 VERT = """
 #version 330
@@ -513,6 +514,17 @@ class Film:
                 "curve_y": ys.astype("f4"), "curve_on": float(on), "curve_c": float(np.exp(lc)),
                 "dots_x": self.dots_x, "dots_y": self.dots_y, "dots_a": da.astype("f4"),
                 "n_dots": len(self.dots_x), "u_range": FLAP_U, "caption_a": float(cap)}
+
+    def uniforms_quartet(self, s, u):
+        """The pre-chorus cues: static from "No warmer" to the end of "colder" (with 60 ms
+        edges), and one white flash on "yes"."""
+        k = "1" if s["name"] == "prechorus1" else "2"
+        t = u["t"]
+        c = self.sync.cues
+        on, off, yes = c[f"static{k}_on"], c[f"static{k}_off"], c[f"yes{k}"]
+        st = float(np.clip((t - on) / 0.06, 0, 1) * np.clip((off - t) / 0.06, 0, 1))
+        fl = float(np.exp(-(t - yes) / QUARTET_FLASH)) if t >= yes else 0.0
+        return {"static_a": st, "flash": fl, "palette": 0.0 if k == "1" else 1.0}
 
     def frame(self, fi):
         t = fi / FPS
