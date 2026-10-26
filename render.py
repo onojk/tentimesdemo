@@ -36,6 +36,16 @@ FLAP_SAMPLES = 96                # verse 2: curve samples
 FLAP_CAPTION = 3.2               # verse 2: s after "one-point-four" the caption fades in
 FLIP_DUR = 0.09                  # verse 2: one flap flip, s
 QUARTET_FLASH = 0.12             # pre-choruses: decay (s) of the one white flash on "yes"
+# choruses: (tower size, cue, cost change with stage 2 to 100 B1, to 10 B1), percent. Costs
+# from NOTES, "Real-prime split-half search", stage 2 appended to the stage-1 pipeline,
+# plain (2 multiplies per prime) -- NOTES writes savings as positive (+6.4 / ... 100: -42.8),
+# shown here as the change in cost. Point counts come from tower.json.
+ARMS = {"chorus1": (72, "forty_three1", +42.8, -6.4), "chorus2": (84, "forty_three2", +35.6, -4.6)}
+ARM_LONG = (-5.3, 0.0)           # long-arm sweep and bar climb, s relative to "forty-three"
+ARM_SHORT = (1.7, 1.7 + 2.27)    # short-arm sweep and bar (one bar long), same reference
+ARM_GREY = 4.8                   # the long arm's extra points grey out ("light the wedge")
+ARM_EL, ARM_DIST, ARM_SHIFT = 40.0, 3.1, -0.16   # chorus camera: elevation, distance, NDC shift
+LABEL_W, LABEL_H, LABEL_SIZE = 400, 72, 46
 
 VERT = """
 #version 330
@@ -230,15 +240,17 @@ class Renderer:
                 self.pts[name] = None
             else:
                 prog = self.ctx.program(vertex_shader=PTS_HEAD + open(path).read(), fragment_shader=PTS_FRAG)
-                vao = self.ctx.vertex_array(prog, [(self.vbo_rah, "3f", "rah"), (self.vbo_attr, "4f", "attr"),
-                                                   (self.vbo_key, "1f", "key")])
+                binds = [(self.vbo_rah, "3f", "rah"), (self.vbo_attr, "4f", "attr"), (self.vbo_key, "1f", "key")]
+                vao = self.ctx.vertex_array(prog, [b for b in binds if b[2] in prog])   # unused ones are optimised out
                 self.pts[name] = (prog, vao)
         return self.pts[name]
     @staticmethod
     def set(prog, uniforms):
         for k, v in uniforms.items():
-            if k in prog and k != "view_proj":
-                if isinstance(v, np.ndarray):
+            if k in prog:
+                if isinstance(v, bytes):                       # a matrix, GL column-major
+                    prog[k].write(v)
+                elif isinstance(v, np.ndarray):
                     buf = np.zeros(prog[k].array_length * prog[k].dimension, "f4")
                     buf[:v.size] = v.ravel()
                     prog[k].write(buf.tobytes())
@@ -261,8 +273,6 @@ class Renderer:
             prog, vao = pts
             self.set(prog, dict(u, res=(self.W, self.H), seed=SEED,
                                 point_px=2.4 * self.H / 480, cam_dist=CAM_DIST))
-            if "view_proj" in u:
-                prog["view_proj"].write(u["view_proj"])
             self.ctx.enable(moderngl.BLEND | moderngl.PROGRAM_POINT_SIZE)
             self.ctx.blend_func = moderngl.ONE, moderngl.ONE
             vao.render(moderngl.POINTS)
@@ -352,16 +362,20 @@ def look_at(eye, target, up):
     m[:3, 3] = -m[:3, :3] @ eye
     return m
 
-def orbit(azimuth, elevation, aspect, dist=CAM_DIST, target=(0.0, 0.0, 0.0)):
-    """view-projection for a camera circling the tower's axis, as GL column-major bytes.
+def orbit(azimuth, elevation, aspect, dist=CAM_DIST, target=(0.0, 0.0, 0.0), shift=0.0, inverse=False):
+    """view-projection for a camera circling the tower's axis, as GL column-major bytes
+    (with inverse=True, also its inverse). shift moves the picture sideways (in NDC x), so
+    the tower can sit left of centre.
     At elevation 90 degrees it looks straight down, with world +z up the screen and +x to
     the right (so a point at angle a sits where the intro drew it)."""
     el = np.radians(min(elevation, 89.9))
     tgt = np.array(target, "f4")
     eye = tgt + dist * np.array([np.cos(el) * np.sin(azimuth), np.sin(el), np.cos(el) * np.cos(azimuth)], "f4")
     up = np.array([-np.sin(azimuth), 0.0, -np.cos(azimuth)], "f4") if elevation >= 89.9 else np.array([0, 1, 0], "f4")
-    vp = perspective(FOV, aspect) @ look_at(eye, tgt, up)
-    return vp.T.astype("f4").tobytes()
+    sh = np.eye(4, dtype="f4"); sh[0, 3] = shift
+    vp = (sh @ perspective(FOV, aspect) @ look_at(eye, tgt, up)).astype("f8")
+    b = vp.T.astype("f4").tobytes()
+    return (b, np.linalg.inv(vp).T.astype("f4").tobytes()) if inverse else b
 
 def tower_arrays(tower):
     """Per-vertex arrays for the point pass: every tower point, then the spine column."""
@@ -390,7 +404,18 @@ class Film:
         self.scene = scene
         tower = json.load(open(TOWER))
         caption = text_image(["fitted c = 1.41"], 44, 520, 64)
-        self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption})
+        self.arm_counts = {}
+        cells = []
+        for name, (n, cue, plong, pshort) in ARMS.items():
+            P = next(x for x in tower["sizes"] if x["n"] == n)["points"]
+            cl, cs = P["lamp_100"].count("pm1_s2"), P["lamp"].count("pm1_s2")
+            self.arm_counts[name] = (cl, cs)
+            print(f"{name}: {n}-bit, stage-2 points lit {cl} (100x) / {cs} (10x), "
+                  f"cost {plong:+.1f}% / {pshort:+.1f}%", file=sys.stderr)
+            for txt in (f"{plong:+.1f}%", f"{pshort:+.1f}%".replace("-", "\u2212"), f"{cl}", f"{cs}",
+                        "100\u00d7 B1", "10\u00d7 B1", f"{n}-bit", "qs"):
+                cells.append(text_image([txt], LABEL_SIZE, LABEL_W, LABEL_H))
+        self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption, "labels": np.vstack(cells)})
         p, theta, angle = ray_point(tower)
         print(f"ray: {RAY_SIZE}-bit point p = {p}, theta {theta:.4f}, angle {angle:.4f} rad",
               file=sys.stderr)
@@ -526,6 +551,45 @@ class Film:
         fl = float(np.exp(-(t - yes) / QUARTET_FLASH)) if t >= yes else 0.0
         return {"static_a": st, "flash": fl, "palette": 0.0 if k == "1" else 1.0}
 
+    def uniforms_arms(self, s, u):
+        """Choruses: light against bill. The long arm (stage 2 to 100 B1) sweeps out from the
+        B1 ray, lighting its stage-2 points as it passes each one's prime q, while its cost bar
+        climbs past the qs line and turns red; "forty-three" shows its +%. Then those points
+        dim, and the short arm (10 B1) sweeps and relights its own, fewer, at full strength,
+        its bar settling under the line. On "light the wedge" the long arm's extra points grey
+        out a little (paid for, not worth it); the short wedge keeps scanning once per bar."""
+        n, cue, plong, pshort = ARMS[s["name"] if s["name"] in ARMS else "chorus1"]
+        t, c43 = u["t"], self.sync.cues[cue]
+        b1 = {72: 9.0, 84: 9.0, 96: 10.0}[n]
+        e0, eL, eS = 1 + b1, 1 + b1 + np.log2(100), 1 + b1 + np.log2(10)   # arm edges, in bits
+        ease = lambda x: float(np.clip(x, 0, 1) ** 2 * (3 - 2 * np.clip(x, 0, 1)))
+        xl = (t - c43 - ARM_LONG[0]) / (ARM_LONG[1] - ARM_LONG[0])
+        xs = (t - c43 - ARM_SHORT[0]) / (ARM_SHORT[1] - ARM_SHORT[0])
+        al, as_ = ease(xl), ease(xs)
+        scan = -1.0
+        if xs >= 1:
+            b0 = self.sync.beat(c43 + ARM_SHORT[1])[0]
+            scan = e0 + (eS - e0) * ((u["beat"] - b0) / 4.0 % 1.0)
+        return {"band_n": float(n), "band_y": (n - 84) / 12 * BAND, "b1_bits": b1, "half_bits": n / 2,
+                "arm_e0": e0, "arm_long": e0 + (eL - e0) * al if xl > 0 else 0.0,
+                "arm_short": e0 + (eS - e0) * as_ if xs > 0 else 0.0,
+                "long_dim": ease((t - c43 - ARM_SHORT[0]) / 0.4),
+                "grey": ease((t - c43 - ARM_GREY) / 0.6), "scan": scan,
+                "bar_long": (1 + plong / 100) * al, "bar_short": (1 + pshort / 100) * as_,
+                "lab_long": ease((t - c43) / 0.15), "lab_short": ease((xs - 1) * (ARM_SHORT[1] - ARM_SHORT[0]) / 0.15),
+                "bars_on": ease(xl * 4), "label_base": float(list(ARMS).index(s["name"]) * 8) if s["name"] in ARMS else 0.0}
+
+    def camera_arms(self, s, u):
+        """One band, seen from 40 degrees, the wedge turned toward the camera at an angle; a
+        slow sway (not a full orbit) keeps the wedge readable. The tower sits left of centre,
+        the bars on the right."""
+        n = u["band_n"]
+        a = 2 * np.pi * (u["arm_e0"] + 3.3) / (n / 2)          # the wedge's middle
+        az0 = np.arctan2(np.cos(a), -np.sin(a)) + 0.55
+        az = az0 + 0.35 * np.sin(0.07 * (u["travel"] - self.sync.at(self.sync.travel, s["start"])))
+        return orbit(az, ARM_EL, self.aspect, dist=ARM_DIST, target=(0.0, u["band_y"], 0.0),
+                     shift=ARM_SHIFT, inverse=True)
+
     def frame(self, fi):
         t = fi / FPS
         s = self.sync.section(t)
@@ -536,7 +600,11 @@ class Film:
             u.update(extra(s, u))
         cam = getattr(self, "camera_" + name, None)
         if cam:
-            u["view_proj"] = cam(s, u)
+            m = cam(s, u)
+            if isinstance(m, tuple):
+                u["view_proj"], u["inv_view_proj"] = m
+            else:
+                u["view_proj"] = m
         return self.r.frame(name, u, fi, key=self.key(dict(s, scene=name)))
 
 def main():
