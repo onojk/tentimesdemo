@@ -26,6 +26,8 @@ TOWER = os.path.join(HERE, "data", "tower.json")
 # that the short arm (p-1 stage 2 at 10 B1) finds
 RAY_SIZE, RAY_LAMP = 72, "pm1_s2"
 R_RIM, R_SPINE = 0.86, 0.035     # screen radius (P units) of theta = 8/n and of the spine
+ASSEMBLE_RINGS = 16              # verse 1: rings per band, one per beat
+ASSEMBLE_TILT = 7.0              # verse 1: seconds to tilt from top-down to the orbit
 
 VERT = """
 #version 330
@@ -73,6 +75,55 @@ float seg(vec2 p, vec2 a, vec2 b, out float h) {
 """
 
 FALLBACK = "void main() { frag = vec4(0.0, 0.0, 0.0, 1.0); }\n"   # a scene not written yet
+
+# The point pass: the tower's points as gaussian sprites, added onto the scene before the
+# bloom. One vertex per point: rah = (radius, angle, height in bits), attr = (lamp at 10 B1,
+# lamp at 100 B1, s2 ratio q / B1, split half 0 / 1), key = the scene's own schedule value
+# (for example a landing time). Each scene's fx/<scene>.pts.glsl writes main(), using place()
+# and lamp_col() from this header. Lamp ids follow LAMPS, then 5 = the spine column.
+PTS_HEAD = """
+#version 330
+in vec3 rah;
+in vec4 attr;
+in float key;
+out vec3 v_col;
+out float v_a;
+uniform mat4 view_proj;
+uniform vec2 res;
+uniform float point_px, cam_dist;
+uniform float t, ts, sdur, local, rms, kick, beat, since_beat, swell, travel;
+uniform int seed;
+const vec3 TD    = vec3(1.00, 0.45, 0.08);
+const vec3 RHO   = vec3(0.20, 0.45, 1.00);
+const vec3 PM1   = vec3(0.05, 0.62, 0.22);
+const vec3 PM2   = vec3(0.50, 1.00, 0.55);
+const vec3 DARK  = vec3(0.32, 0.33, 0.35);
+const vec3 WHITE = vec3(1.00, 0.98, 0.95);
+const float BAND = 0.42;                  // world height between the 72, 84 and 96 bands
+// z is mirrored so that the orbit camera seen from straight above shows angle a at
+// (cos a, sin a) on screen, as the intro draws it
+vec3 world(vec3 q) { return vec3(2.0 * q.x * cos(q.y), (q.z - 84.0) / 12.0 * BAND, -2.0 * q.x * sin(q.y)); }
+vec3 lamp_col(float l) {
+    return l < 0.5 ? TD : l < 1.5 ? RHO : l < 2.5 ? PM1 : l < 3.5 ? PM2 : DARK;
+}
+void place(vec3 w, float size) {
+    gl_Position = view_proj * vec4(w, 1.0);
+    gl_PointSize = max(1.0, size * point_px * cam_dist / max(gl_Position.w, 0.1));
+}
+"""
+
+PTS_FRAG = """
+#version 330
+in vec3 v_col;
+in float v_a;
+out vec4 frag;
+void main() {
+    vec2 d = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(d, d);
+    if (r2 > 1.0 || v_a <= 0.0) discard;
+    frag = vec4(v_col * v_a * exp(-r2 * 3.0), 1.0);
+}
+"""
 
 DOWN = """
 #version 330
@@ -142,6 +193,8 @@ class Renderer:
         self.out_fbo = self.ctx.framebuffer([self.out])
         self.down, self.blur, self.post = (self.program(s) for s in (DOWN, BLUR, POST))
         self.scenes = {}
+        self.pts = {}                                          # scene -> (prog, vao) or None
+        self.vbo_rah = self.vbo_attr = self.vbo_key = None
     def program(self, frag):
         prog = self.ctx.program(vertex_shader=VERT, fragment_shader=frag)
         return prog, self.ctx.vertex_array(prog, [(self.quad, "2f", "pos")])
@@ -151,20 +204,50 @@ class Renderer:
             src = open(path).read() if os.path.exists(path) else FALLBACK
             self.scenes[name] = self.program(HEAD + src)
         return self.scenes[name]
+    def load_points(self, rah, attr):
+        self.n_pts = len(rah)
+        self.vbo_rah = self.ctx.buffer(rah.tobytes())
+        self.vbo_attr = self.ctx.buffer(attr.tobytes())
+        self.vbo_key = self.ctx.buffer(reserve=4 * self.n_pts)
+    def points_prog(self, name):
+        if name not in self.pts:
+            path = os.path.join(HERE, "fx", name + ".pts.glsl")
+            if not os.path.exists(path) or self.vbo_rah is None:
+                self.pts[name] = None
+            else:
+                prog = self.ctx.program(vertex_shader=PTS_HEAD + open(path).read(), fragment_shader=PTS_FRAG)
+                vao = self.ctx.vertex_array(prog, [(self.vbo_rah, "3f", "rah"), (self.vbo_attr, "4f", "attr"),
+                                                   (self.vbo_key, "1f", "key")])
+                self.pts[name] = (prog, vao)
+        return self.pts[name]
     @staticmethod
     def set(prog, uniforms):
         for k, v in uniforms.items():
-            if k in prog:
+            if k in prog and k != "view_proj":
                 if isinstance(v, np.ndarray):
                     buf = np.zeros(prog[k].array_length * prog[k].dimension, "f4")
                     buf[:v.size] = v.ravel()
                     prog[k].write(buf.tobytes())
                 else:
                     prog[k].value = v
-    def frame(self, name, u, frame_no, gain=1.0, bloom_gain=0.9):
+    def frame(self, name, u, frame_no, gain=1.0, bloom_gain=0.9, key=None):
+        """key: this scene's per-point schedule (float32, one per point), or None."""
         prog, vao = self.scene_prog(name)
         self.set(prog, dict(u, res=(self.W, self.H), seed=SEED))
         self.scene_fbo.use(); vao.render(moderngl.TRIANGLE_STRIP)
+        pts = self.points_prog(name)
+        if pts:
+            if key is not None:
+                self.vbo_key.write(key.tobytes())
+            prog, vao = pts
+            self.set(prog, dict(u, res=(self.W, self.H), seed=SEED,
+                                point_px=2.4 * self.H / 480, cam_dist=CAM_DIST))
+            if "view_proj" in u:
+                prog["view_proj"].write(u["view_proj"])
+            self.ctx.enable(moderngl.BLEND | moderngl.PROGRAM_POINT_SIZE)
+            self.ctx.blend_func = moderngl.ONE, moderngl.ONE
+            vao.render(moderngl.POINTS)
+            self.ctx.disable(moderngl.BLEND | moderngl.PROGRAM_POINT_SIZE)
         # bloom
         p, v = self.down
         self.scene.use(0); p["src"].value = 0
@@ -205,6 +288,52 @@ def save_png(buf, W, H, path):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
                     "-s", f"{W}x{H}", "-i", "-", "-vf", "vflip", path], input=buf, check=True)
 
+LAMPS = ("td", "rho", "pm1_s1", "pm1_s2", "dark")
+SPINE_N = 90                     # grey sprites in the spine column (the wall)
+CAM_DIST, FOV = 3.9, 30.0        # orbit camera: distance (world units), vertical fov (degrees)
+BAND = 0.42                      # world height between bands (as in PTS_HEAD)
+
+def perspective(fov, aspect, near=0.1, far=50.0):
+    f = 1 / np.tan(np.radians(fov) / 2)
+    return np.array([[f / aspect, 0, 0, 0], [0, f, 0, 0],
+                     [0, 0, (far + near) / (near - far), 2 * far * near / (near - far)],
+                     [0, 0, -1, 0]], "f4")
+
+def look_at(eye, target, up):
+    f = target - eye; f = f / np.linalg.norm(f)
+    r = np.cross(f, up); r = r / np.linalg.norm(r)
+    u = np.cross(r, f)
+    m = np.eye(4, dtype="f4")
+    m[0, :3], m[1, :3], m[2, :3] = r, u, -f
+    m[:3, 3] = -m[:3, :3] @ eye
+    return m
+
+def orbit(azimuth, elevation, aspect, dist=CAM_DIST, target=(0.0, 0.0, 0.0)):
+    """view-projection for a camera circling the tower's axis, as GL column-major bytes.
+    At elevation 90 degrees it looks straight down, with world +z up the screen and +x to
+    the right (so a point at angle a sits where the intro drew it)."""
+    el = np.radians(min(elevation, 89.9))
+    tgt = np.array(target, "f4")
+    eye = tgt + dist * np.array([np.cos(el) * np.sin(azimuth), np.sin(el), np.cos(el) * np.cos(azimuth)], "f4")
+    up = np.array([-np.sin(azimuth), 0.0, -np.cos(azimuth)], "f4") if elevation >= 89.9 else np.array([0, 1, 0], "f4")
+    vp = perspective(FOV, aspect) @ look_at(eye, tgt, up)
+    return vp.T.astype("f4").tobytes()
+
+def tower_arrays(tower):
+    """Per-vertex arrays for the point pass: every tower point, then the spine column."""
+    rah, attr = [], []
+    for s in tower["sizes"]:
+        P = s["points"]
+        for i in range(len(P["p"])):
+            r2 = P["s2_ratio"][i]
+            rah.append((P["radius"][i], P["angle"][i], s["n"]))
+            attr.append((LAMPS.index(P["lamp"][i]), LAMPS.index(P["lamp_100"][i]),
+                         -1.0 if r2 is None else r2, 0.0 if P["half"][i] == "A" else 1.0))
+    for k in range(SPINE_N):
+        rah.append((0.0, 0.0, 66.0 + 36.0 * k / (SPINE_N - 1)))
+        attr.append((5, 5, -1.0, 0.0))
+    return np.array(rah, "f4"), np.array(attr, "f4")
+
 def ray_point(tower):
     """The intro's number: (p, theta, screen angle) of the first RAY_SIZE-bit point lit RAY_LAMP."""
     s = next(x for x in tower["sizes"] if x["n"] == RAY_SIZE)["points"]
@@ -221,13 +350,55 @@ class Film:
         print(f"ray: {RAY_SIZE}-bit point p = {p}, theta {theta:.4f}, angle {angle:.4f} rad",
               file=sys.stderr)
         self.consts = {"ray_angle": angle, "r_rim": R_RIM, "r_spine": R_SPINE}
+        self.rah, self.attr = tower_arrays(tower)
+        self.r.load_points(self.rah, self.attr)
+        self.aspect = W / H
+        self.keys = {}                                         # section name -> key array
+
+    def key(self, s):
+        """The per-point schedule of section s (cached), from its scene's schedule function."""
+        if s["name"] not in self.keys:
+            fn = getattr(self, "key_" + s["scene"], None)
+            self.keys[s["name"]] = None if fn is None else fn(s).astype("f4")
+        return self.keys[s["name"]]
+
+    def key_assemble(self, s):
+        """Verse 1: landing time (s from the section start) of each point. The 72, 84 and 96
+        bands land in turn, ASSEMBLE_RINGS rings each, one ring per beat; within a band the
+        rings go by radius, rim first, with a small stagger by angle so each ring ripples
+        round. The spine column is there from the start."""
+        beats = [b for b in self.sync.beat_t if s["start"] <= b < s["end"]]
+        key = np.zeros(len(self.rah), "f4")
+        for k, n in enumerate((72, 84, 96)):
+            idx = np.nonzero(self.rah[:, 2] == n)[0]
+            idx = idx[np.argsort(-self.rah[idx, 0], kind="stable")]
+            for j, ring in enumerate(np.array_split(idx, ASSEMBLE_RINGS)):
+                b = beats[min(k * ASSEMBLE_RINGS + j, len(beats) - 1)]
+                key[ring] = b - s["start"] + 0.12 * self.rah[ring, 1] / (2 * np.pi)
+        key[self.attr[:, 0] == 5] = -1.0
+        return key
+
+    def camera_assemble(self, s, u):
+        """Starts straight down, as the intro left the ray, then tilts to 24 degrees over the
+        first ASSEMBLE_TILT seconds while orbiting at a speed that follows the loudness."""
+        x = min(1.0, u["ts"] / ASSEMBLE_TILT)
+        x = x * x * (3 - 2 * x)
+        el = 90.0 + (24.0 - 90.0) * x
+        az = 0.10 * (u["travel"] - self.sync.at(self.sync.travel, s["start"]))
+        # first frame: the 72-bit rim (theta = 8/72) projects at the intro's R_RIM
+        rim = 2 * (0.5 - 8 / 72)
+        d0 = rim / (R_RIM * np.tan(np.radians(FOV) / 2)) - BAND
+        return orbit(az, el, self.aspect, dist=d0 + (CAM_DIST - d0) * x, target=(0.0, -0.06 * x, 0.0))
 
     def frame(self, fi):
         t = fi / FPS
         s = self.sync.section(t)
         name = self.scene or s["scene"]
         u = dict(self.sync.uniforms(t), **self.consts)
-        return self.r.frame(name, u, fi)
+        cam = getattr(self, "camera_" + name, None)
+        if cam:
+            u["view_proj"] = cam(s, u)
+        return self.r.frame(name, u, fi, key=self.key(dict(s, scene=name)))
 
 def main():
     ap = argparse.ArgumentParser()

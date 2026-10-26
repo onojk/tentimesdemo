@@ -211,7 +211,9 @@ grey. The spine (radius → 0) is always grey: it's the wall.
      half B checking it through.
    - The centre stays grey.
 10. **Final chorus.** All three sizes stacked (72 / 84 / 96), fully lit from the JSON,
-    orbiting slowly. Bloom follows the choir swell (smoothed rms + high band). On
+    orbiting slowly. Bloom follows the choir swell (smoothed rms + high band). The fan's outer
+    edge is a real spiral (max angle = 2π(1 − 2·radius)): when the orbit passes a side-on
+    view, the camera eases for a beat or two so the spiral edge reads clearly. On
     "forty-three" (3:17.00), the 72-bit band briefly shows its two cost bars again
     (+42.8% red, −6.4% under the line) for about one bar. Then they fade and the orbit
     continues. No new numbers.
