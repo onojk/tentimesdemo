@@ -237,3 +237,54 @@ Each commit uses explicit `git add <paths>`. I never push.
 
 Setup: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` (numpy,
 moderngl, sympy).
+
+## Calls made while the user was away
+
+Made under the standing go of Oct 26: decisions that PLAN.md didn't settle, each the
+simplest one that fits the scene's description.
+
+1. **Verse 4: the speckle is real ECM.** Each beat rolls the next of 48 seeded curves from
+   `data/make_ecm.py` → `data/ecm.json`. Each is a Suyama curve with the card's bounds,
+   B1 = 257 and B2 = 12,850 (NOTES I-017), run mod p on each of the 657 dark 96-bit
+   points. The points it finds sparkle, about 136 per curve.
+   - The first version stopped as soon as any intermediate multiple hit infinity, and
+     disagreed with exact point orders on 12 of 300 test curves. It now uses exact
+     arithmetic (infinity is a value, not an exit) and agrees 300/300 with the exact rule
+     computed from each curve's point order.
+2. **Verse 4: the floodlight starts on "But not tonight" (1:59.92).** That is new cue
+   `not_tonight` in `sections.py`, the line that ends "the wall is cheap today". It washes
+   only the band's disc, so the background stays black.
+3. **Verse 4: the ticker eases out (quadratic) and reaches 8,187 on the cue frame.** That
+   is frame 3329 for 1:50.98; it reads 8,184 a tenth of a second earlier.
+4. **`render.py --section` now starts on the section's own first frame (t ≥ start).** It
+   used to round the start time, so a preview could begin with the previous section's last
+   frame. That showed up as a false regression in pre-chorus 2 once verse 4 stopped being
+   black. Full renders were never affected.
+5. **Bridge cues** from the transcript:
+   - "The rim lights first" 2:40.88;
+   - "spark" 2:43.58;
+   - "A thousand rays" 2:45.18;
+   - "Half of the numbers" 2:59.92;
+   - "the other half" 3:02.94.
+
+   The ray lights from the rim to its factor's radius (θ = 0.1991, 22.6% of the way in),
+   arriving exactly on "spark". The spark lands on "a thousand rays". The tower's 2,898 lit
+   points light rim-first:
+   - half A from 2:45.5 to 2:58.4;
+   - half A pulses once on "half of the numbers chose the road";
+   - half B lights between 3:02.94 and 3:04.7, with a white check flare.
+
+   The 1,602 dark points and the spine stay grey. A thin grey line divides the two panels.
+6. **Final chorus: what "side-on" means.** The orbit runs at 22° elevation. Around 3:23 it
+   slows to 15% speed (gaussian, half-width 0.3 rad) while the camera looks across the
+   spiral edge at data radius 0.2, whose edge angle is 2π(1 − 2·0.2).
+7. **Final chorus: what "brightest moment" means.** "The tower's lit" (3:30.12) is the
+   moment the *tower's own light* is brightest: point brightness ×(1 + 0.9), bloom gain up
+   to 2.6, decaying over 2.5 s. By whole-frame mean luma it can't be the film's brightest
+   frame:
+   - the pre-chorus grey static averages 121/255 over a second;
+   - the "yes" and rho-detection flashes peak at 226–229;
+   - the tower on black peaks at a mean of about 19.
+
+   A full-frame white-out long enough to beat those would break "on black" and the flash
+   rules, so I didn't add one.

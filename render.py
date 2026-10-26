@@ -61,6 +61,11 @@ BRIDGE_L = ((-0.89, 0.0), 0.72)  # bridge: left panel's centre and rim radius (P
 BRIDGE_SHIFT, BRIDGE_DIST, BRIDGE_EL = 0.50, 5.1, 24.0   # bridge: right panel's tower camera
 BRIDGE_A_END = 13.2              # bridge: s after "a thousand rays" by which half A has filled
 BRIDGE_B_DUR = 1.8               # bridge: s for half B to fill after "the other half"
+FINALE_EL, FINALE_SPEED = 22.0, 0.12   # final chorus: orbit elevation (deg), mean speed (rad/s)
+FINALE_EDGE_R = 0.2              # final chorus: the spiral edge is read at this data radius...
+FINALE_EDGE_AT = 203.0           # ...and the orbit passes it side-on about here (s)
+FINALE_EASE = (0.85, 0.30)       # ...slowing by this much, over this half-width (rad)
+FINALE_ECHO = 2.27               # final chorus: s the 72-bit bars hold after "forty-three" (one bar)
 
 VERT = """
 #version 330
@@ -712,6 +717,41 @@ class Film:
                 "fly": fly, "spark_from": frm, "spark_to": to, "left_c": (cx, cy), "left_r": R,
                 "since_a": float(t - c["half_a"]), "since_b": float(t - c["half_b"])}
 
+    def finale_azimuth(self, s):
+        """The final chorus's orbit, frame by frame: speed follows the loudness, and slows by
+        FINALE_EASE where the camera looks at the fan's spiral edge side-on (the edge's angle
+        at radius FINALE_EDGE_R: 2 pi (1 - 2 r)), so the spiral reads for a beat or two."""
+        if getattr(self, "_fin_az", None) is None:
+            a = 2 * np.pi * (1 - 2 * FINALE_EDGE_R)
+            az_edge = np.arctan2(-np.sin(a), -np.cos(a)) + np.pi / 2     # looking across the edge
+            f0, f1 = int(np.ceil(s["start"] * FPS - 1e-9)), int(np.ceil(s["end"] * FPS - 1e-9))
+            az = np.zeros(f1 - f0 + 1)
+            az[0] = az_edge - FINALE_SPEED * (FINALE_EDGE_AT - s["start"])
+            for i in range(1, len(az)):
+                t = (f0 + i) / FPS
+                w = FINALE_SPEED * (0.6 + 0.8 * self.sync.at(self.sync.rms, t))
+                dz = (az[i - 1] - az_edge + np.pi) % (2 * np.pi) - np.pi
+                az[i] = az[i - 1] + w * (1 - FINALE_EASE[0] * np.exp(-(dz / FINALE_EASE[1]) ** 2)) / FPS
+            self._fin_az = (f0, az)
+        return self._fin_az
+
+    def camera_finale(self, s, u):
+        f0, az = self.finale_azimuth(s)
+        i = int(np.clip(round(u["t"] * FPS) - f0, 0, len(az) - 1))
+        return orbit(az[i], FINALE_EL, self.aspect, dist=CAM_DIST, target=(0.0, -0.06, 0.0))
+
+    def uniforms_finale(self, s, u):
+        """Bloom rides the choir swell; "the tower's lit" is the tower's brightest moment; the
+        72-bit cost bars of chorus 1 echo for one bar on "forty-three" (no new numbers)."""
+        c, t = self.sync.cues, u["t"]
+        lit = t - c["tower_lit"]
+        peak = float(np.exp(-lit / 2.5)) if lit >= 0 else float(np.exp(lit / 0.6))
+        x = t - c["forty_three3"]
+        echo = float(np.clip(x / 0.2, 0, 1) * np.clip((FINALE_ECHO + 0.4 - x) / 0.4, 0, 1)) if x >= 0 else 0.0
+        n, cue, plong, pshort = ARMS["chorus1"]
+        return {"bloom": 0.9 + 0.8 * u["swell"] + 0.9 * peak, "peak": peak, "echo": echo,
+                "bar_long": 1 + plong / 100, "bar_short": 1 + pshort / 100, "label_base": 0.0}
+
     def frame(self, fi):
         t = fi / FPS
         s = self.sync.section(t)
@@ -729,7 +769,7 @@ class Film:
                 u["view_proj"] = m
         kf = getattr(self, "keyframe_" + name, None)
         key = kf(s, u) if kf else self.key(dict(s, scene=name))
-        return self.r.frame(name, u, fi, key=key)
+        return self.r.frame(name, u, fi, key=key, bloom_gain=u.get("bloom", 0.9))
 
 def main():
     ap = argparse.ArgumentParser()
