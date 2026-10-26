@@ -65,6 +65,14 @@ CUES = [
     ("outro_line2",      220.78, "'Sealed before the run' (220.78-224.46)"),
     ("last_word",        223.58, "'run' (223.58-224.46): the typed text completes; the clock ticks on to the last tick"),
 ]
+# the outro's spoken words as typed on screen, with their transcript times (start, end); the
+# transcript heard "12 % on the plane on," for "Twelve percent on the plain arm."
+OUTRO_WORDS = [
+    (0, "Twelve", 217.38, 217.80), (0, "percent", 217.80, 218.14), (0, "on", 218.14, 218.48),
+    (0, "the", 218.48, 218.68), (0, "plain", 218.68, 219.02), (0, "arm.", 219.02, 219.86),
+    (1, "Sealed", 220.78, 221.84), (1, "before", 221.84, 222.60), (1, "the", 222.60, 223.58),
+    (1, "run.", 223.58, 224.46),
+]
 MUSIC_END_RAW = 230.87            # last tracked beat; -26 -> -83 dBFS within a second
 
 def build():
@@ -89,7 +97,8 @@ def build():
                                           for s in secs) and t < music_end]
     json.dump({"source": "cache/features.json", "confirmed": "transcript, 2026-10-26", "sections": secs,
                "cues": [{"name": n, "t": t, "why": w} for n, t, w in CUES],
-               "ticks": ticks, "music_end": music_end},
+               "ticks": ticks, "music_end": music_end,
+               "outro_words": [{"line": l, "word": w, "start": a, "end": b} for l, w, a, b in OUTRO_WORDS]},
               open(OUT, "w"), indent=1)
     return f, secs, ticks, music_end
 

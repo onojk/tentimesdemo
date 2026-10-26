@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 SEED = 0x10C5                    # the only source of noise; change it to re-roll the grain
 TOWER = os.path.join(HERE, "data", "tower.json")
+SECTIONS_JSON = os.path.join(HERE, "cache", "sections.json")
 # the one number whose ray the intro draws (and the bridge lights): the first 72-bit point
 # that the short arm (p-1 stage 2 at 10 B1) finds
 RAY_SIZE, RAY_LAMP = 72, "pm1_s2"
@@ -66,6 +67,9 @@ FINALE_EDGE_R = 0.2              # final chorus: the spiral edge is read at this
 FINALE_EDGE_AT = 203.0           # ...and the orbit passes it side-on about here (s)
 FINALE_EASE = (0.85, 0.30)       # ...slowing by this much, over this half-width (rad)
 FINALE_ECHO = 2.27               # final chorus: s the 72-bit bars hold after "forty-three" (one bar)
+OUTRO_LINES = ["Twelve percent on the plain arm.", "Sealed before the run."]
+OUTRO_TEX = (2200, 120, 84)      # outro: line texture width, height, font size (DejaVu Sans Mono)
+OUTRO_ADV = 0.602                # DejaVu Sans Mono advance, in font sizes
 
 VERT = """
 #version 330
@@ -439,6 +443,14 @@ class Film:
         rho_cells = [text_image([x], 64 if i == 0 else 40, RHO_TEXT_W, RHO_TEXT_H) for i, x in enumerate(RHO_TEXT)]
         self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption, "labels": np.vstack(cells),
                                  "rho_text": np.vstack(rho_cells), "ecm_text": ecm_cells[0]})
+        # the outro's two lines, each drawn in one call so the font's baseline and monospace
+        # advance hold; the shader reveals them character by character (slot k of a line
+        # spans left + k adv, left + (k + 1) adv, checked against the ink)
+        for i, line in enumerate(OUTRO_LINES):
+            img = text_image([line], OUTRO_TEX[2], OUTRO_TEX[0], OUTRO_TEX[1])
+            tx = self.r.ctx.texture((OUTRO_TEX[0], OUTRO_TEX[1]), 1, np.ascontiguousarray(img[::-1]).tobytes())
+            tx.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self.r.tex[f"outro_l{i}"] = tx
         ecm = json.load(open(ECM))
         off = [x["n"] for x in tower["sizes"]].index(ecm["size"]) * tower["per_size"]
         self.ecm_hits = [np.array(c["hits"], int) + off for c in ecm["curves"]]
@@ -751,6 +763,30 @@ class Film:
         n, cue, plong, pshort = ARMS["chorus1"]
         return {"bloom": 0.9 + 0.8 * u["swell"] + 0.9 * peak, "peak": peak, "echo": echo,
                 "bar_long": 1 + plong / 100, "bar_short": 1 + pshort / 100, "label_base": 0.0}
+
+    def uniforms_outro(self, s, u):
+        """Outro: each spoken word types out over its own spoken interval (sections.py
+        OUTRO_WORDS, from the transcript), so the text completes as "run" ends. The clock's
+        hand steps once per detected tick (the same ticks you hear) and stops on the last one;
+        after the music's cut the picture goes to black for the silent tail."""
+        t = u["t"]
+        words = json.load(open(SECTIONS_JSON))["outro_words"] if not hasattr(self, "_ow") else self._ow
+        self._ow = words
+        shown = [0, 0]
+        for li, line in enumerate(OUTRO_LINES):
+            pos = 0
+            for w in (x for x in words if x["line"] == li):
+                k = line.index(w["word"], pos)
+                frac = np.clip((t - w["start"]) / (w["end"] - w["start"]), 0, 1)
+                if frac > 0:
+                    shown[li] = k + int(np.ceil(frac * len(w["word"])))
+                pos = k + len(w["word"])
+        last = self.sync.tick_t[self.sync.tick_t < self.sync.music_end][-1]
+        adv = OUTRO_ADV * OUTRO_TEX[2]
+        return {"len0": len(OUTRO_LINES[0]), "len1": len(OUTRO_LINES[1]), "shown0": shown[0], "shown1": shown[1],
+                "adv_px": adv, "tex_wh": (float(OUTRO_TEX[0]), float(OUTRO_TEX[1])),
+                "typing": float(t < words[-1]["end"]), "stopped": float(t >= last),
+                "black": float(t >= self.sync.music_end)}
 
     def frame(self, fi):
         t = fi / FPS

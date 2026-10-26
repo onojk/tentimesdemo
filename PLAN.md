@@ -288,3 +288,15 @@ simplest one that fits the scene's description.
 
    A full-frame white-out long enough to beat those would break "on black" and the flash
    rules, so I didn't add one.
+8. **Outro typing:**
+   - each word types out over its own spoken interval (`sections.py` `OUTRO_WORDS`, from
+     the transcript); the transcriber heard "12 % on the plane on," for "Twelve percent on
+     the plain arm.";
+   - each line is one drawtext texture (DejaVu Sans Mono), revealed by monospace slot;
+   - a cursor blinks while typing and stays steady from "run" (ends 3:44.46).
+9. **Outro clock:**
+   - the hand steps one notch (of 60) per detected tick: 26 ticks, each within one frame of
+     its tick;
+   - it stops on the last tick, frame 6891 = 3:49.700, and holds until the music's cut
+     (3:50.87);
+   - the 1.13 s silent tail after the cut is black, as in laser-beam-demo.
