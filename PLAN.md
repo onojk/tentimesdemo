@@ -154,7 +154,9 @@ All are from `~/lumens-per-watt/NOTES.md`, Oct 26, and are shown exactly as writ
 | on screen | figure | NOTES |
 |---|---|---|
 | 3.4 → 1.4 (1.41) | p−1 behaves like a random integer of size p/c: model input 3.4, fitted c = 1.41 (stage 1) on 1,500 real primes per size, 16–44 bits | "Real-prime measurement run" (l. 4741–4743) |
-| 43 (+42.8%) | appending stage 2 at 100·B1: −42.8% at 72 bits (plain); at 10·B1 it saves 6.4% | "Real-prime split-half search" (l. 4848) |
+| +42.8% / −6.4% (cost; chorus 1) | stage 2 appended to the stage-1 pipeline, plain, 72 bits: 100·B1 costs 42.8% more, 10·B1 saves 6.4% (NOTES writes savings as +: "+6.4 … 100: −42.8") | "Real-prime split-half search" (l. 4848) |
+| +35.6% / −4.6% (chorus 2, 84-bit) | the same row at 84 bits | same |
+| 402 / 247 (72), 386 / 225 (84) | stage-2 points lit at 100× / 10× | `data/tower.json` |
 | 552 / 279 (1.98×) | the card's rho detects at 552.0 f-evaluations against mean μ + λ = 279.4 on 16-bit primes | Outside checks, second round (l. 1713–1716) |
 | 8,187 | ruint per ECM curve at B1 = 257 | I-017 information step (l. 4626) |
 | 12.1% | the honest saving from plain p−1 stage 2 at 72 bits, split-half | "Real-prime split-half search" (l. 4845) |
@@ -177,12 +179,23 @@ grey. The spine (radius → 0) is always grey: it's the wall.
    white flash on "yes".
 5. **Pre-chorus 2.** The same scene, with beam colours from the tower palette (td, rho, p−1
    s1, p−1 s2).
-6. **Chorus 1 (72-bit) / chorus 2 (84-bit), arms.**
-   - Long arm to 100·B1: the points `lamp_100` gains light, then dim and fall away on
-     "forty-three", with "+42.8%" shown.
-   - Short arm to 10·B1: a clean light-green wedge sweeps round once per bar, lighting
-     stage-2 points as it passes.
-   - Chorus 2 is 4 bars longer, so the sweep runs longer, not faster.
+6. **Chorus 1 (72-bit) / chorus 2 (84-bit), arms: light against bill.** The long arm loses
+   on cost, not on light.
+   - **Long arm (100·B1):** it sweeps out and lights its stage-2 points. Beside the tower, a
+     cost bar climbs past the qs line and turns red, labelled **"+42.8%"** on "forty-three",
+     with its count small underneath: **402** stage-2 points at 72 bits.
+   - **Short arm (10·B1):** it lights fewer stage-2 points, **247**. Its cost bar settles
+     below the line, labelled **"−6.4%"**.
+   - **Then:** the long arm's 155 extra points stay lit but grey out slightly (paid for, not
+     worth it). The short arm's light-green wedge stays bright and keeps sweeping, once per
+     bar.
+   - **Sources:** both percentages are from NOTES, "Real-prime split-half search", appended
+     to the stage-1 pipeline, plain, 72 bits. Both counts are from `data/tower.json`
+     (`pm1_s2` under `lamp_100` vs `lamp`, 72 bits).
+   - **Chorus 2 (84-bit tower):** the 84-bit figures from the same NOTES row are +35.6% /
+     −4.6%, with 386 / 225 points. *Unless you say otherwise*, chorus 2 shows those, so the
+     bars match the tower on screen. It is 4 bars longer, so the sweep runs longer, not
+     faster.
 7. **Verse 3, rho.** The stored Brent run's footsteps around its ρ cycle. The stride doubles
    at each power of two, and the walk runs past the meeting point toward 2× ("552 / 279").
    Flash on detection.
