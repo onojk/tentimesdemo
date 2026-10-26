@@ -268,13 +268,13 @@ simplest one that fits the scene's description.
    - "the other half" 3:02.94.
 
    The ray lights from the rim to its factor's radius (θ = 0.1991, 22.6% of the way in),
-   arriving exactly on "spark". The spark lands on "a thousand rays". The tower's 2,898 lit
+   arriving exactly on "spark". The spark lands on "a thousand rays". The tower's 2,543 lit
    points light rim-first:
    - half A from 2:45.5 to 2:58.4;
    - half A pulses once on "half of the numbers chose the road";
    - half B lights between 3:02.94 and 3:04.7, with a white check flare.
 
-   The 1,602 dark points and the spine stay grey. A thin grey line divides the two panels.
+   The 1,957 dark points and the spine stay grey. A thin grey line divides the two panels.
 6. **Final chorus: what "side-on" means.** The orbit runs at 22° elevation. Around 3:23 it
    slows to 15% speed (gaussian, half-width 0.3 rad) while the camera looks across the
    spiral edge at data radius 0.2, whose edge angle is 2π(1 − 2·0.2).
