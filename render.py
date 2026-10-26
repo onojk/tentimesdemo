@@ -14,12 +14,13 @@ Changed: scenes write linear RGB, not three emission channels, because the tower
 fixed hues (HEAD's TD, RHO, PM1, PM2, DARK, WHITE) on pure black. The post pass keeps bloom,
 tone map, a mild vignette and grain; the tape warp, scanlines and scroller are gone.
 """
-import argparse, json, os, subprocess, sys
+import argparse, json, os, subprocess, sys, tempfile
 import numpy as np
 import moderngl
 from sync import Sync, FPS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 SEED = 0x10C5                    # the only source of noise; change it to re-roll the grain
 TOWER = os.path.join(HERE, "data", "tower.json")
 # the one number whose ray the intro draws (and the bridge lights): the first 72-bit point
@@ -28,6 +29,12 @@ RAY_SIZE, RAY_LAMP = 72, "pm1_s2"
 R_RIM, R_SPINE = 0.86, 0.035     # screen radius (P units) of theta = 8/n and of the spine
 ASSEMBLE_RINGS = 16              # verse 1: rings per band, one per beat
 ASSEMBLE_TILT = 7.0              # verse 1: seconds to tilt from top-down to the orbit
+FLAP_U = (0.75, 4.25)            # verse 2: plotted range of u = ln p / ln B1
+FLAP_C = (3.4, 1.41)             # verse 2: c before and after "one-point-four" (NOTES)
+FLAP_SPRING = (0.28, 1.3)        # verse 2: damping ratio and period (s) of c's settle
+FLAP_SAMPLES = 96                # verse 2: curve samples
+FLAP_CAPTION = 3.2               # verse 2: s after "one-point-four" the caption fades in
+FLIP_DUR = 0.09                  # verse 2: one flap flip, s
 
 VERT = """
 #version 330
@@ -176,7 +183,7 @@ void main() {
 """
 
 class Renderer:
-    def __init__(self, W, H):
+    def __init__(self, W, H, textures=None):
         self.W, self.H = W, H
         self.ctx = moderngl.create_standalone_context(backend="egl")
         self.quad = self.ctx.buffer(np.array([-1, -1, 1, -1, -1, 1, 1, 1], "f4").tobytes())
@@ -194,6 +201,12 @@ class Renderer:
         self.down, self.blur, self.post = (self.program(s) for s in (DOWN, BLUR, POST))
         self.scenes = {}
         self.pts = {}                                          # scene -> (prog, vao) or None
+        self.tex = {}
+        for name, img in (textures or {}).items():             # 8-bit gray, top row first
+            h, w = img.shape
+            tx = self.ctx.texture((w, h), 1, np.ascontiguousarray(img[::-1]).tobytes())
+            tx.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self.tex[name] = tx
         self.vbo_rah = self.vbo_attr = self.vbo_key = None
     def program(self, frag):
         prog = self.ctx.program(vertex_shader=VERT, fragment_shader=frag)
@@ -234,6 +247,11 @@ class Renderer:
         """key: this scene's per-point schedule (float32, one per point), or None."""
         prog, vao = self.scene_prog(name)
         self.set(prog, dict(u, res=(self.W, self.H), seed=SEED))
+        for unit, (k, tx) in enumerate(self.tex.items(), start=1):
+            if k in prog:
+                tx.use(unit); prog[k].value = unit
+                if k + "_size" in prog:
+                    prog[k + "_size"].value = tx.size
         self.scene_fbo.use(); vao.render(moderngl.TRIANGLE_STRIP)
         pts = self.points_prog(name)
         if pts:
@@ -267,6 +285,31 @@ class Renderer:
                      "bloom_gain": bloom_gain, "frame": frame_no, "seed": SEED})
         self.out_fbo.use(); v.render(moderngl.TRIANGLE_STRIP)
         return self.out_fbo.read(components=3)                 # bottom row first
+
+def text_image(lines, size, w, h, font=FONT_MONO, spacing=0):
+    """White text on black from ffmpeg's drawtext, 8-bit gray, top row first (from
+    laser-beam-demo)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+        fh.write("\n".join(lines))
+    try:
+        vf = (f"drawtext=fontfile={font}:textfile={fh.name}:fontsize={size}:fontcolor=white:"
+              f"x=(w-text_w)/2:y=(h-text_h)/2:line_spacing={spacing}:expansion=none")
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s={w}x{h}",
+                              "-frames:v", "1", "-vf", vf, "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                             capture_output=True, check=True).stdout
+    finally:
+        os.unlink(fh.name)
+    return np.frombuffer(raw, np.uint8).reshape(h, w)
+
+GLYPHS = "0123456789"             # atlas cells 0-9; cell 10 is blank
+GLYPH_W, GLYPH_H, GLYPH_SIZE = 120, 170, 150
+
+def glyph_atlas():
+    """The digits in fixed cells (one drawtext call each, so every digit is centred in its
+    cell the same way), plus one blank cell."""
+    cells = [text_image([ch], GLYPH_SIZE, GLYPH_W, GLYPH_H) for ch in GLYPHS]
+    cells.append(np.zeros((GLYPH_H, GLYPH_W), np.uint8))
+    return np.hstack(cells)
 
 def ffmpeg_writer(path, W, H, start, dur, audio, crf, preset, song_end):
     cmd = ["ffmpeg", "-v", "error", "-y",
@@ -344,8 +387,9 @@ class Film:
     def __init__(self, W, H, scene=None):
         self.sync = Sync()
         self.scene = scene
-        self.r = Renderer(W, H)
         tower = json.load(open(TOWER))
+        caption = text_image(["fitted c = 1.41"], 44, 520, 64)
+        self.r = Renderer(W, H, {"glyphs": glyph_atlas(), "caption": caption})
         p, theta, angle = ray_point(tower)
         print(f"ray: {RAY_SIZE}-bit point p = {p}, theta {theta:.4f}, angle {angle:.4f} rad",
               file=sys.stderr)
@@ -354,6 +398,7 @@ class Film:
         self.r.load_points(self.rah, self.attr)
         self.aspect = W / H
         self.keys = {}                                         # section name -> key array
+        self.flap_init(tower)
 
     def key(self, s):
         """The per-point schedule of section s (cached), from its scene's schedule function."""
@@ -390,11 +435,93 @@ class Film:
         d0 = rim / (R_RIM * np.tan(np.radians(FOV) / 2)) - BAND
         return orbit(az, el, self.aspect, dist=d0 + (CAM_DIST - d0) * x, target=(0.0, -0.06 * x, 0.0))
 
+    def flap_init(self, tower):
+        """Verse 2's data. Dots: the tower's measured p-1 stage-1 hit rate (B1-powersmooth)
+        in bins of u = ln p / ln B1, all three sizes pooled. Curve: Dickman rho(u - ln c /
+        ln B1) with ln B1 averaged over the points; c = 3.4 is the model input, 1.41 the
+        fitted value in NOTES ("Real-prime measurement run"). This tower alone fits
+        c = 1.46 (95% 1.29-1.65), so the settled curve lies on the dots."""
+        h = 1e-3
+        self.rho_u = np.arange(0, 8, h)
+        rho = np.ones_like(self.rho_u)
+        k = int(round(1 / h))
+        for i in range(k, len(rho)):                           # rho'(u) = -rho(u - 1) / u
+            rho[i] = rho[i - 1] - h * rho[i - k] / self.rho_u[i]
+        self.rho = rho
+        ps, s1, lnb = [], [], []
+        for sz in tower["sizes"]:
+            P = sz["points"]
+            ps += P["p"]; s1 += P["s1"]; lnb += [np.log(sz["B1"])] * len(P["p"])
+        ps, s1, lnb = np.array(ps, float), np.array(s1, float), np.array(lnb)
+        u = np.log(ps) / lnb
+        self.lnb = float(lnb.mean())
+        edges = np.arange(FLAP_U[0], FLAP_U[1] + 1e-9, 0.25)
+        dx, dy = [], []
+        for a, b in zip(edges, edges[1:]):
+            m = (u >= a) & (u < b)
+            if m.sum() >= 30:
+                dx.append(0.5 * (a + b)); dy.append(s1[m].mean())
+        self.dots_x, self.dots_y = np.array(dx, "f4"), np.array(dy, "f4")
+        print(f"flap: {len(dx)} dots, u {dx[0]:.3f}..{dx[-1]:.3f}", file=sys.stderr)
+        # the two flap cards: (time, target digit) events; cards cycle forward like real ones
+        c = self.sync.cues
+        self.flips = [self.flip_path([(c["three_point_four"], 3), (c["one_point_four"], 1)]),
+                      self.flip_path([(c["three_point_four"] + 0.05, 4)])]
+
+    @staticmethod
+    def flip_path(events):
+        """[(start time, from, to)] for one card, from blank, cycling forward 0-9."""
+        flips, cur = [], 10
+        for t0, target in events:
+            k = 0
+            while cur != target:
+                nxt = 0 if cur == 10 else (cur + 1) % 10
+                flips.append((t0 + k * FLIP_DUR, cur, nxt)); cur = nxt; k += 1
+        return flips
+
+    @staticmethod
+    def flap_state(flips, t):
+        a = b = 10; f = 0.0
+        for t0, x, y in flips:
+            if t < t0:
+                break
+            a, b, f = x, y, min(1.0, (t - t0) / FLIP_DUR)
+        return (b, b, 0.0) if f >= 1.0 else (a, b, f)
+
+    def uniforms_flap(self, s, u):
+        t = u["t"]
+        cues = self.sync.cues
+        st = [self.flap_state(fl, t) for fl in self.flips]
+        # c: 3.4 until "one-point-four", then a damped spring in log c down to 1.41
+        lc0, lc1 = np.log(FLAP_C[0]), np.log(FLAP_C[1])
+        tau = t - cues["one_point_four"]
+        if tau < 0:
+            lc = lc0
+        else:
+            w = 2 * np.pi / FLAP_SPRING[1]; z = FLAP_SPRING[0]
+            lc = lc1 + (lc0 - lc1) * np.exp(-z * w * tau) * np.cos(w * np.sqrt(1 - z * z) * tau)
+        xs = np.linspace(FLAP_U[0], FLAP_U[1], FLAP_SAMPLES)
+        ys = np.interp(xs - lc / self.lnb, self.rho_u, self.rho, left=1.0)
+        on = np.clip((t - cues["three_point_four"]) / 0.6, 0, 1)
+        # dots: one per half beat from the section start (the "ah" fill)
+        half = np.sort(np.r_[self.sync.beat_t, 0.5 * (self.sync.beat_t[1:] + self.sync.beat_t[:-1])])
+        half = half[half >= s["start"]][:len(self.dots_x)]
+        da = np.clip((t - half) / 0.12, 0, 1)
+        cap = np.clip((tau - FLAP_CAPTION) / 0.5, 0, 1) if tau > 0 else 0.0
+        return {"flap_a": tuple(float(x[0]) for x in st), "flap_b": tuple(float(x[1]) for x in st),
+                "flap_f": tuple(float(x[2]) for x in st),
+                "curve_y": ys.astype("f4"), "curve_on": float(on), "curve_c": float(np.exp(lc)),
+                "dots_x": self.dots_x, "dots_y": self.dots_y, "dots_a": da.astype("f4"),
+                "n_dots": len(self.dots_x), "u_range": FLAP_U, "caption_a": float(cap)}
+
     def frame(self, fi):
         t = fi / FPS
         s = self.sync.section(t)
         name = self.scene or s["scene"]
         u = dict(self.sync.uniforms(t), **self.consts)
+        extra = getattr(self, "uniforms_" + name, None)
+        if extra:
+            u.update(extra(s, u))
         cam = getattr(self, "camera_" + name, None)
         if cam:
             u["view_proj"] = cam(s, u)
